@@ -3,61 +3,67 @@ import sharp from "sharp";
 
 /**
  * Fetches a safe Wikimedia thumbnail using the REST API.
- * Avoids Cloudflare 403 errors from upload.wikimedia.org.
- *
- * Returns: Buffer or null
+ * Logs everything for debugging.
  */
 export async function fetchEventImage(title) {
   try {
-    if (!title) return null;
+    if (!title) {
+      console.log("[Image] No Wikipedia title provided.");
+      return null;
+    }
 
-    // Format title into Wikipedia style
     const safeTitle = encodeURIComponent(title.replace(/\s+/g, "_"));
 
-    // Wikimedia REST API: always safe, always returns an image
     const apiUrl = `https://api.wikimedia.org/core/v1/wikipedia/en/page/${safeTitle}/thumbnail/800`;
 
-    console.log("[Image] Fetching REST thumbnail:", apiUrl);
+    console.log("[Image] Trying Wikipedia title:", title);
+    console.log("[Image] Using REST URL:", apiUrl);
 
     const res = await fetch(apiUrl, {
       headers: {
-        "User-Agent": "DateTodayBot/1.0 (https://twitter.com/)",
+        "User-Agent": "DateTodayBot/1.0",
         "Accept": "application/json"
       }
     });
 
     if (!res.ok) {
-      console.log("[Image] Thumbnail fetch failed:", res.status);
+      console.log("[Image] REST API returned status:", res.status);
       return null;
     }
 
     const data = await res.json();
 
     if (!data?.thumbnail?.url) {
-      console.log("[Image] No thumbnail returned from REST API.");
+      console.log("[Image] REST API returned JSON but no thumbnail:", data);
       return null;
     }
 
-    // Fetch the actual image bytes
+    console.log("[Image] Found thumbnail URL:", data.thumbnail.url);
+
     const imgResponse = await fetch(data.thumbnail.url);
+
     if (!imgResponse.ok) {
-      console.log("[Image] Failed to download thumbnail image:", imgResponse.status);
+      console.log("[Image] Could not download thumbnail:", imgResponse.status);
       return null;
     }
 
-    const arrayBuf = await imgResponse.arrayBuffer();
-    const buffer = Buffer.from(arrayBuf);
+    const imgArray = await imgResponse.arrayBuffer();
+    const buffer = Buffer.from(imgArray);
 
-    // Crop to square for Twitter
+    console.log("[Image] Thumbnail downloaded. Cropping...");
+
     const square = await sharp(buffer)
       .resize(1000, 1000, { fit: "cover" })
       .jpeg({ quality: 90 })
       .toBuffer();
 
+    console.log("[Image] Cropped image ready!");
+
     return square;
 
   } catch (err) {
-    console.error("[Image] Error processing image:", err.message);
+    console.error("[Image] Unexpected error:", err.message);
     return null;
   }
 }
+
