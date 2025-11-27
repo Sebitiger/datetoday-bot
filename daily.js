@@ -7,23 +7,23 @@ export async function postDailyTweet() {
   try {
     const event = await getEventForDate();
 
-    // Add the month/day for formatting
-    const dateObj = new Date();
-    event.monthName = dateObj.toLocaleString("en-US", { month: "long" });
-    event.day = dateObj.getUTCDate();
+    const today = new Date();
+    event.monthName = today.toLocaleString("en-US", { month: "long" });
+    event.day = today.getUTCDate();
 
-    const main = await generateMainTweet(event);
-    const reply = await generateReplyTweet(event);
+    const mainTweet = await generateMainTweet(event);
+    const replyTweet = await generateReplyTweet(event);
 
-    // Post main tweet
-    const mainRes = await postTweet(main);
+    // Main tweet
+    const mainRes = await postTweet(mainTweet);
     const mainId = mainRes.data.id;
 
-    // Post the reply
-    await postTweet(reply, mainId);
+    // Reply tweet
+    await postTweet(replyTweet, mainId);
 
-    console.log("[Daily] Tweet + reply posted.");
+    console.log("[Daily] Tweet + reply posted successfully.");
   } catch (err) {
     console.error("[Daily] error:", err);
   }
 }
+
