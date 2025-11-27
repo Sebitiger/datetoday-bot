@@ -31,7 +31,7 @@ jobs:
         run: npm install
 
       - name: Run correct script based on cron schedule
-        run: |
+         run: node runDaily.js
           if [ "${{ github.event.schedule }}" = "0 9 * * *" ]; then
             node runDaily.js
           elif [ "${{ github.event.schedule }}" = "0 18 * * *" ]; then
