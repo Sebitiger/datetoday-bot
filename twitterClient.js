@@ -9,6 +9,7 @@ const client = new TwitterApi({
   accessSecret: process.env.ACCESS_SECRET,
 });
 
+// --- POST A SINGLE TWEET OR A REPLY ---
 export async function postTweet(text, replyToId = null) {
   try {
     const res = await client.v2.tweet({
@@ -21,3 +22,25 @@ export async function postTweet(text, replyToId = null) {
     throw err;
   }
 }
+
+// --- POST A FULL THREAD (USED BY WEEKLY POST) ---
+export async function postThread(tweets) {
+  try {
+    let lastId = null;
+
+    for (const tweet of tweets) {
+      const res = await client.v2.tweet({
+        text: tweet,
+        reply: lastId ? { in_reply_to_tweet_id: lastId } : undefined,
+      });
+
+      lastId = res.data.id;
+    }
+
+    console.log("[Twitter] Thread posted with", tweets.length, "tweets");
+  } catch (err) {
+    console.error("[Twitter thread error]", err);
+    throw err;
+  }
+}
+
