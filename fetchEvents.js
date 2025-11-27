@@ -1,20 +1,5 @@
 import axios from "axios";
-
-function pickPreferredEvent(events) {
-  if (!events || events.length === 0) {
-    return null;
-  }
-
-  // Prefer events between years 1500 and 2000 for relatability
-  const preferred = events.filter(e => {
-    const yearNum = parseInt(e.year, 10);
-    return yearNum >= 1500 && yearNum <= 2000;
-  });
-
-  const pool = preferred.length ? preferred : events;
-  const idx = Math.floor(Math.random() * pool.length);
-  return pool[idx];
-}
+import { classifyEvent } from "./eventClassifier.js";
 
 export async function getEventForDate(date = new Date()) {
   const month = date.getUTCMonth() + 1;
@@ -25,25 +10,62 @@ export async function getEventForDate(date = new Date()) {
 
   try {
     const { data } = await axios.get(url, { timeout: 10000 });
-    const event = pickPreferredEvent(data.events);
+    const events = data.events;
 
-    if (!event) {
-      throw new Error("No events returned from API");
+    if (!events || events.length === 0) {
+      throw new Error("No events returned");
     }
 
-    const wikipediaEntry = event.wikipedia?.[0];
-    const wikipediaTitle = wikipediaEntry?.title || null;
+    // STEP 1 — Filter to educational events
+    const educationalEvents = events.filter(e => {
+      const desc = e.description.toLowerCase();
+
+      // Filter OUT trivial/modern/pop events
+      const excluded = ["film", "movie", "album", "sport", "football", "soccer", "pop", "award", "tv", "show", "team"];
+      if (excluded.some(k => desc.includes(k))) return false;
+
+      // Must be related to history, science, culture, politics, exploration, religion, art, etc.
+      const included = [
+        "war", "battle", "empire", "king", "queen", "emperor",
+        "dynasty", "revolution", "invention", "discovery", "science",
+        "medicine", "astronomy", "philosophy", "religion",
+        "treaty", "constitution", "rights", "independence",
+        "exploration", "expedition", "architecture", "art", "culture",
+        "society", "reform", "civil", "navy", "army", "astronomer"
+      ];
+      return included.some(k => desc.includes(k));
+    });
+
+    const pool = educationalEvents.length > 0 ? educationalEvents : events;
+
+    // STEP 2 — Score events
+    const scored = pool.map(ev => ({
+      event: ev,
+      score: classifyEvent(ev.description)
+    }));
+
+    // STEP 3 — Weighted random selection
+    const weighted = [];
+    for (const item of scored) {
+      for (let i = 0; i < item.score; i++) weighted.push(item.event);
+    }
+
+    const finalEvent = weighted[Math.floor(Math.random() * weighted.length)];
+
+    // Extract Wikipedia title
+    const wiki = finalEvent.wikipedia?.[0];
+    const wikipediaTitle = wiki?.title || null;
 
     return {
-      year: event.year,
-      description: event.description,
+      year: finalEvent.year,
+      description: finalEvent.description,
       wikipediaTitle
     };
   } catch (err) {
-    console.error("[Events] Failed to fetch events:", err.message || err);
+    console.error("[Events] Error:", err);
     return {
       year: "N/A",
-      description: "A significant historical event took place on this day. (Fallback content – external API unavailable.)",
+      description: "A major historical event took place on this day, shaping human development.",
       wikipediaTitle: null
     };
   }
