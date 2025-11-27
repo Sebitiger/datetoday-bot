@@ -1,70 +1,43 @@
+// twitterClient.js
 import { TwitterApi } from "twitter-api-v2";
-import dotenv from "dotenv";
-dotenv.config();
 
 const client = new TwitterApi({
   appKey: process.env.API_KEY,
   appSecret: process.env.API_SECRET,
   accessToken: process.env.ACCESS_TOKEN,
-  accessSecret: process.env.ACCESS_SECRET,
+  accessSecret: process.env.ACCESS_SECRET
 });
 
-// Single tweet or reply, with optional media
-export async function postTweet(text, replyToId = null, mediaIds = null) {
+export async function postTweet(text, mediaBuffer = null) {
   try {
-    const payload = {
+    let mediaId = null;
+
+    if (mediaBuffer) {
+      const uploadRes = await client.v1.uploadMedia(mediaBuffer, { type: "image" });
+      mediaId = uploadRes;
+    }
+
+    const res = await client.v2.tweet({
       text,
-    };
+      ...(mediaId ? { media: { media_ids: [mediaId] } } : {})
+    });
 
-    if (replyToId) {
-      payload.reply = { in_reply_to_tweet_id: replyToId };
-    }
-
-    if (mediaIds && mediaIds.length) {
-      payload.media = { media_ids: mediaIds };
-    }
-
-    const res = await client.v2.tweet(payload);
-    console.log("[Twitter] Tweet posted with id:", res.data?.id);
-    return res;
+    console.log("[Twitter] Tweet posted with id:", res.data.id);
+    return res.data.id;
   } catch (err) {
-    console.error("[Twitter] Error posting tweet:", err?.data || err);
+    console.error("[Twitter Error posting tweet]", err);
     throw err;
   }
 }
 
-// Thread for weekly posts
-export async function postThread(tweets) {
+export async function replyTweet(text, replyToId) {
   try {
-    let lastId = null;
-
-    for (const tweet of tweets) {
-      const payload = {
-        text: tweet,
-      };
-      if (lastId) {
-        payload.reply = { in_reply_to_tweet_id: lastId };
-      }
-
-      const res = await client.v2.tweet(payload);
-      lastId = res.data.id;
-    }
-
-    console.log("[Twitter] Thread posted with", tweets.length, "tweets");
+    const res = await client.v2.tweet({
+      text,
+      reply: { in_reply_to_tweet_id: replyToId }
+    });
+    console.log("[Twitter] Reply posted:", res.data.id);
   } catch (err) {
-    console.error("[Twitter] Error posting thread:", err?.data || err);
-    throw err;
-  }
-}
-
-// Upload an image and return media ID
-export async function uploadImage(buffer) {
-  try {
-    const mediaId = await client.v1.uploadMedia(buffer, { mimeType: "image/jpeg" });
-    console.log("[Twitter] Image uploaded, media id:", mediaId);
-    return mediaId;
-  } catch (err) {
-    console.error("[Twitter] Error uploading image:", err?.data || err);
-    throw err;
+    console.error("[Twitter reply error]", err);
   }
 }
