@@ -1,18 +1,19 @@
+// generateReply.js
+
 import { openai, SYSTEM_PROMPT } from "./openaiCommon.js";
 
 export async function generateReply(event) {
   const userPrompt = `
-Write 2–3 short, factual sentences explaining the historical significance of this event.
+Write a concise historian-style explanation (1–3 sentences)
+giving context and significance for this event:
 
-Event:
-${event.description}
+"${event.description}"
 
 Rules:
-- Tone: neutral, educational, modern historian.
-- Only verified context. Do NOT invent dates, locations, or interpretations.
+- Neutral, factual, educational.
 - No emojis.
 - No hashtags.
-- Max 280 characters.
+- No invented details.
 `;
 
   try {
@@ -22,17 +23,17 @@ Rules:
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: userPrompt },
       ],
-      temperature: 0.5,
-      max_tokens: 200,
+      temperature: 0.4,
+      max_tokens: 220,
     });
 
     const text = completion.choices[0]?.message?.content?.trim();
     if (!text) {
-      throw new Error("Empty reply tweet from OpenAI");
+      throw new Error("Empty reply from OpenAI");
     }
     return text;
   } catch (err) {
-    console.error("[OpenAI reply tweet error]", err.message || err);
-    return "Additional context unavailable.";
+    console.error("[OpenAI reply error]", err.message || err);
+    return "Additional historical context is unavailable at the moment.";
   }
 }
