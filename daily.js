@@ -1,20 +1,29 @@
 import { getEventForDate } from "./fetchEvents.js";
-import { generateTweetFromEvent } from "./generateTweet.js";
+import { generateMainTweet } from "./generateTweet.js";
+import { generateReplyTweet } from "./generateReply.js";
 import { postTweet } from "./twitterClient.js";
 
 export async function postDailyTweet() {
-  console.log("[Daily] Job started.");
   try {
     const event = await getEventForDate();
-    console.log("[Daily] Selected event:", event.year, "-", event.description.slice(0, 80), "...");
-    const tweet = await generateTweetFromEvent(event);
 
-    // Basic safety: ensure tweet length <= 280
-    const trimmed = tweet.length > 280 ? tweet.slice(0, 277) + "…" : tweet;
+    // Add the month/day for formatting
+    const dateObj = new Date();
+    event.monthName = dateObj.toLocaleString("en-US", { month: "long" });
+    event.day = dateObj.getUTCDate();
 
-    await postTweet(trimmed);
-    console.log("[Daily] Job finished.");
+    const main = await generateMainTweet(event);
+    const reply = await generateReplyTweet(event);
+
+    // Post main tweet
+    const mainRes = await postTweet(main);
+    const mainId = mainRes.data.id;
+
+    // Post the reply
+    await postTweet(reply, mainId);
+
+    console.log("[Daily] Tweet + reply posted.");
   } catch (err) {
-    console.error("[Daily] Job failed:", err.message || err);
+    console.error("[Daily] error:", err);
   }
 }
