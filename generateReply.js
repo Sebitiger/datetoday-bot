@@ -2,32 +2,17 @@ import { openai, SYSTEM_PROMPT } from "./openaiCommon.js";
 
 export async function generateReplyTweet(event) {
   const userPrompt = `
-You will create a short educational reply tweet AND a high-quality Britannica link.
+Write 2–3 short, factual sentences explaining the historical significance of this event.
 
-Event description:
+Event:
 ${event.description}
 
-TASKS:
-
-1) Write 2–3 concise, historian-style sentences explaining the significance of the event.
-   - Neutral, factual tone.
-   - No emojis.
-   - No hashtags.
-   - Max 230 characters (save room for the link).
-
-2) Create a Britannica search link using the most probable subject:
-   Format:
-   https://www.britannica.com/search?query=<SEARCH_TERM>
-
-3) Return the final reply tweet in this exact structure:
-
-<Historian explanation>
-🔗 Learn more: <Britannica link>
-
-RULES:
-- Use the event’s main subject as the search term (ex: “Coronation of Napoleon”).
-- Do NOT invent facts not supported by the event description.
-- The link must ALWAYS be to Britannica search.
+Rules:
+- Tone: neutral, educational, modern historian.
+- Only verified context. Do NOT invent dates, locations, or interpretations.
+- No emojis.
+- No hashtags.
+- Max 280 characters.
 `;
 
   try {
@@ -38,17 +23,16 @@ RULES:
         { role: "user", content: userPrompt },
       ],
       temperature: 0.5,
-      max_tokens: 300,
+      max_tokens: 200,
     });
 
     const text = completion.choices[0]?.message?.content?.trim();
     if (!text) {
       throw new Error("Empty reply tweet from OpenAI");
     }
-
     return text;
   } catch (err) {
     console.error("[OpenAI reply tweet error]", err.message || err);
-    return "Additional context unavailable.\n🔗 Learn more: https://www.britannica.com/";
+    return "Additional context unavailable.";
   }
 }
