@@ -1,30 +1,38 @@
-import { openai } from "./openaiCommon.js";
+import { openai, SYSTEM_PROMPT } from "./openaiCommon.js";
 
 export async function generateReplyTweet(event) {
   const userPrompt = `
-Write 1–2 short sentences giving extra historical context about this event.
-Rules:
-- No emojis
-- No hashtags
-- Clear, factual, neutral tone
-- Max 280 characters
+Write 2–3 short sentences of historical context about this event.
 
 Event:
 ${event.description}
+
+Rules:
+- Explain why it mattered, what it changed, or how it was perceived.
+- Neutral, professional tone (modern historian).
+- No emojis.
+- No hashtags.
+- Max 280 characters.
 `;
 
   try {
     const completion = await openai.chat.completions.create({
       model: "gpt-4.1-mini",
-      messages: [{ role: "user", content: userPrompt }],
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: userPrompt },
+      ],
       temperature: 0.5,
-      max_tokens: 170,
+      max_tokens: 220,
     });
 
-    return completion.choices[0].message.content.trim();
+    const text = completion.choices[0]?.message?.content?.trim();
+    if (!text) {
+      throw new Error("Empty reply tweet from OpenAI");
+    }
+    return text;
   } catch (err) {
-    console.error("[OpenAI reply tweet error]", err);
+    console.error("[OpenAI reply tweet error]", err.message || err);
     return "Additional context unavailable.";
   }
 }
-
