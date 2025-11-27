@@ -1,6 +1,6 @@
 import { openai, SYSTEM_PROMPT } from "./openaiCommon.js";
 
-export async function generateReplyTweet(event) {
+export async function generateReply(event) {
   const userPrompt = `
 Write 2–3 short, factual sentences explaining the historical significance of this event.
 
