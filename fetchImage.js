@@ -1,83 +1,40 @@
+// fetchImage.js
 import fetch from "node-fetch";
-import sharp from "sharp";
 
-/**
- * Try to fetch an image for one title using Wikimedia REST API.
- * Returns a cropped square Buffer, or null if nothing works.
- */
-async function fetchImageForTitle(title) {
+export async function fetchImage(event) {
   try {
-    if (!title) {
-      console.log("[Image] Skipping empty title.");
-      return null;
+    const title = event.wikipediaTitle || event.description.split(":")[0];
+
+    // 1) TRY: Wikimedia REST API (square crop, 800px)
+    const restUrl = `https://api.wikimedia.org/core/v1/wikipedia/en/page/${encodeURIComponent(
+      title
+    )}/thumbnail/800`;
+
+    const restRes = await fetch(restUrl);
+
+    if (restRes.ok) {
+      const buff = Buffer.from(await restRes.arrayBuffer());
+      return buff;
     }
 
-    const safeTitle = encodeURIComponent(title.replace(/\s+/g, "_"));
-    const apiUrl = `https://api.wikimedia.org/core/v1/wikipedia/en/page/${safeTitle}/thumbnail/800`;
+    console.log("[Image] REST thumbnail failed → trying fallback…");
 
-    console.log("[Image] Trying title:", title);
-    console.log("[Image] REST URL:", apiUrl);
+    // 2) TRY: Traditional API: get main image name
+    const infoUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageimages&piprop=original&titles=${encodeURIComponent(
+      title
+    )}`;
+    const infoRes = await fetch(infoUrl).then((r) => r.json());
 
-    const res = await fetch(apiUrl, {
-      headers: {
-        "User-Agent": "HerodotusDailyBot/1.0",
-        "Accept": "application/json"
-      }
-    });
-
-    if (!res.ok) {
-      console.log("[Image] REST API status for", title, "=>", res.status);
-      return null;
+    const page = Object.values(infoRes.query.pages)[0];
+    if (page?.original?.source) {
+      const imgRes = await fetch(page.original.source);
+      const buff = Buffer.from(await imgRes.arrayBuffer());
+      return buff;
     }
 
-    const data = await res.json();
-
-    if (!data?.thumbnail?.url) {
-      console.log("[Image] No thumbnail in REST response for", title);
-      return null;
-    }
-
-    console.log("[Image] Thumbnail URL for", title, "=>", data.thumbnail.url);
-
-    const imgResponse = await fetch(data.thumbnail.url);
-    if (!imgResponse.ok) {
-      console.log("[Image] Failed to download thumbnail for", title, "=>", imgResponse.status);
-      return null;
-    }
-
-    const bufArray = await imgResponse.arrayBuffer();
-    const buffer = Buffer.from(bufArray);
-
-    // Crop to square for X
-    const square = await sharp(buffer)
-      .resize(1000, 1000, { fit: "cover" })
-      .jpeg({ quality: 90 })
-      .toBuffer();
-
-    console.log("[Image] Cropped square image ready for", title);
-    return square;
-
+    throw new Error("No image found in fallback");
   } catch (err) {
-    console.error("[Image] Error with title", title, "=>", err.message);
-    return null;
+    console.error("[Image Error]", err.message);
+    return null; // posts without image
   }
-}
-
-/**
- * Main function used by the bot.
- * Accepts either a single string or an array of title candidates.
- * Tries each one until one image works.
- */
-export async function fetchEventImage(titleOrTitles) {
-  const titles = Array.isArray(titleOrTitles) ? titleOrTitles : [titleOrTitles];
-
-  for (const t of titles) {
-    const buffer = await fetchImageForTitle(t);
-    if (buffer) {
-      return buffer;  // done, we found an image
-    }
-  }
-
-  console.log("[Image] No image found for any candidate title:", titles);
-  return null;
 }
