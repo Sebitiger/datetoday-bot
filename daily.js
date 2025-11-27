@@ -1,6 +1,6 @@
 import { fetchEventImage } from "./fetchImage.js";
 import { postTweet } from "./twitterClient.js";
-import { generateTweetText } from "./generateTweet.js";
+import { generateMainTweet } from "./generateTweet.js";
 import { generateReplyTweet } from "./generateReply.js";
 import fetch from "node-fetch";
 
