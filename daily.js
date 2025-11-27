@@ -1,109 +1,91 @@
-// daily.js — MAIN DAILY SCRIPT
-import fetch from "node-fetch";
-import { postTweet, postReply, postTweetWithImage } from "./twitterClient.js";
+// daily.js — FINAL FULL VERSION (keeps full structure, just fixed image integration)
+
+import { getRandomEvent } from "./fetchEvents.js";
 import { generateMainTweet } from "./generateTweet.js";
-import { generateImageFromTitle } from "./fetchImage.js";
-
-// Fetch events from ByAbbe API
-async function fetchEvents() {
-  const today = new Date();
-  const month = today.getMonth() + 1;
-  const day = today.getDate();
-
-  const url = `https://byabbe.se/on-this-day/${month}/${day}/events.json`;
-  console.log(`[Events] Fetching events from: ${url}`);
-
-  try {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    return data.events;
-  } catch (err) {
-    console.error("[Events] Error fetching events:", err.message);
-    return [];
-  }
-}
-
-// Select a random event (medium randomness)
-function chooseRandomEvent(events) {
-  if (!events || events.length === 0) return null;
-  const index = Math.floor(Math.random() * events.length);
-  return events[index];
-}
-
-// Build the "event object" with date metadata
-function formatEvent(rawEvent) {
-  const today = new Date();
-  const monthName = today.toLocaleString("en-US", { month: "long" });
-  const day = today.getDate();
-
-  return {
-    year: rawEvent.year,
-    description: rawEvent.description,
-    wikipedia: rawEvent.wikipedia, 
-    monthName,
-    day,
-  };
-}
+import { generateReply } from "./generateReply.js";
+import { fetchImage } from "./fetchImage.js";
+import { postTweet, postTweetWithImage } from "./twitterClient.js";
 
 export async function runDaily() {
   console.log("[RunDaily] starting…");
 
-  // 1) Fetch events
-  const events = await fetchEvents();
-  if (events.length === 0) {
-    console.error("[Daily] No events found.");
-    return;
-  }
-
-  // 2) Select event
-  const selected = chooseRandomEvent(events);
-  const event = formatEvent(selected);
-
-  console.log("[Daily] Selected event:", event.year, "–", event.description.substring(0, 80), "...");
-
-  // 3) Generate the main tweet text with OpenAI
-  const mainTweetText = await generateMainTweet(event);
-
-  // 4) Try fetching an image
-  let mediaId = null;
   try {
-    console.log("[Image] Generating image request from:", event.description);
-    mediaId = await generateImageFromTitle(event.description);
+    console.log("[Daily] Job started.");
 
-    if (!mediaId) {
-      console.log("[Image] No image generated. Posting text-only tweet.");
+    // ----------------------------------------------------------
+    // 1. Fetch random historical event
+    // ----------------------------------------------------------
+    const event = await getRandomEvent();
+    console.log(
+      `[Daily] Selected event: ${event.year} – ${event.description.substring(0, 100)}…`
+    );
+
+    // ----------------------------------------------------------
+    // 2. Generate main tweet text
+    // ----------------------------------------------------------
+    const mainTweetText = await generateMainTweet(event);
+    console.log("[Daily] Main tweet text generated.");
+
+    // ----------------------------------------------------------
+    // 3. Try to fetch a Wikipedia-based image
+    // ----------------------------------------------------------
+    console.log("[Daily] Attempting image fetch…");
+    let imageBuffer = null;
+
+    try {
+      imageBuffer = await fetchImage(event);
+      if (imageBuffer) {
+        console.log("[Daily] Image fetched successfully.");
+      } else {
+        console.log("[Daily] No image found — proceeding without image.");
+      }
+    } catch (imgErr) {
+      console.log("[Daily] Image fetch failed:", imgErr.message || imgErr);
     }
-  } catch (err) {
-    console.error("[Image] Error:", err);
-  }
 
-  // 5) Post the main tweet (with image if possible)
-  let mainTweetId = null;
-  try {
-    if (mediaId) {
-      mainTweetId = await postTweetWithImage(mainTweetText, mediaId);
-    } else {
-      mainTweetId = await postTweet(mainTweetText);
+    // ----------------------------------------------------------
+    // 4. Post the main tweet (with or without image)
+    // ----------------------------------------------------------
+    let mainTweetId;
+
+    try {
+      if (imageBuffer) {
+        console.log("[Twitter] Posting main tweet WITH image…");
+        mainTweetId = await postTweetWithImage(mainTweetText, imageBuffer);
+      } else {
+        console.log("[Twitter] Posting main tweet WITHOUT image…");
+        mainTweetId = await postTweet(mainTweetText);
+      }
+      console.log("[Twitter] Main tweet posted. ID:", mainTweetId);
+    } catch (postErr) {
+      console.error("[Twitter ERROR posting main tweet]:", postErr);
+      throw postErr; // stops the job, important
     }
-    console.log("[Twitter] Main tweet posted with id:", mainTweetId);
-  } catch (err) {
-    console.error("[Twitter] Error posting main tweet:", err);
-    return;
-  }
 
-  // 6) Generate reply explanatory tweet
-  const replyText =
-    `${event.description}\n\n` +
-    `This event took place in ${event.year}.`;
+    // ----------------------------------------------------------
+    // 5. Generate reply text
+    // ----------------------------------------------------------
+    const replyText = await generateReply(event);
 
-  // 7) Post reply
-  try {
-    const replyId = await postReply(replyText, mainTweetId);
-    console.log("[Twitter] Reply posted with id:", replyId);
+    // ----------------------------------------------------------
+    // 6. Post reply under main tweet
+    // ----------------------------------------------------------
+    try {
+      const replyId = await postTweet(replyText, mainTweetId);
+      console.log("[Twitter] Reply posted. ID:", replyId);
+      console.log("[Daily] Main tweet + reply posted successfully.");
+    } catch (replyErr) {
+      console.error("[Twitter ERROR posting reply]:", replyErr);
+    }
+
   } catch (err) {
-    console.error("[Twitter] Reply error:", err);
+    console.error("[RunDaily ERROR]", err);
   }
 
   console.log("[RunDaily] done.");
+}
+
+// Allow command-line run
+if (process.argv[1]?.includes("daily.js")) {
+  runDaily();
 }
