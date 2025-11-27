@@ -1,40 +1,73 @@
 // fetchImage.js
-import fetch from "node-fetch";
+// Safe, stable Wikipedia image fetcher
+// Always returns: Buffer OR null
 
-export async function fetchImage(event) {
+import axios from "axios";
+
+export async function fetchEventImage(event) {
   try {
-    const title = event.wikipediaTitle || event.description.split(":")[0];
+    // Use the first 8–10 words of the event description as a search query
+    const query = event.description.split(" ").slice(0, 10).join(" ");
 
-    // 1) TRY: Wikimedia REST API (square crop, 800px)
-    const restUrl = `https://api.wikimedia.org/core/v1/wikipedia/en/page/${encodeURIComponent(
-      title
-    )}/thumbnail/800`;
+    console.log("[Image] Searching Wikipedia for:", query);
 
-    const restRes = await fetch(restUrl);
+    // 1. Search Wikipedia
+    const searchRes = await axios.get(
+      "https://en.wikipedia.org/w/api.php",
+      {
+        params: {
+          action: "query",
+          list: "search",
+          srsearch: query,
+          format: "json",
+          srlimit: 1,
+          origin: "*",
+        },
+      }
+    );
 
-    if (restRes.ok) {
-      const buff = Buffer.from(await restRes.arrayBuffer());
-      return buff;
+    const page = searchRes.data?.query?.search?.[0];
+    if (!page) {
+      console.log("[Image] No matching Wikipedia page.");
+      return null;
     }
 
-    console.log("[Image] REST thumbnail failed → trying fallback…");
+    const pageId = page.pageid;
 
-    // 2) TRY: Traditional API: get main image name
-    const infoUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageimages&piprop=original&titles=${encodeURIComponent(
-      title
-    )}`;
-    const infoRes = await fetch(infoUrl).then((r) => r.json());
+    // 2. Get page info + thumbnail
+    const pageInfoRes = await axios.get(
+      "https://en.wikipedia.org/w/api.php",
+      {
+        params: {
+          action: "query",
+          pageids: pageId,
+          prop: "pageimages",
+          pithumbsize: 800,
+          format: "json",
+          origin: "*",
+        },
+      }
+    );
 
-    const page = Object.values(infoRes.query.pages)[0];
-    if (page?.original?.source) {
-      const imgRes = await fetch(page.original.source);
-      const buff = Buffer.from(await imgRes.arrayBuffer());
-      return buff;
+    const pageInfo = pageInfoRes.data?.query?.pages?.[pageId];
+
+    if (!pageInfo?.thumbnail?.source) {
+      console.log("[Image] No thumbnail available.");
+      return null;
     }
 
-    throw new Error("No image found in fallback");
+    const imageUrl = pageInfo.thumbnail.source;
+    console.log("[Image] Thumbnail URL:", imageUrl);
+
+    // 3. Download the image
+    const imgRes = await axios.get(imageUrl, {
+      responseType: "arraybuffer",
+    });
+
+    return Buffer.from(imgRes.data);
+
   } catch (err) {
-    console.error("[Image Error]", err.message);
-    return null; // posts without image
+    console.error("[Image ERROR]", err.message);
+    return null; // fail safe
   }
 }
