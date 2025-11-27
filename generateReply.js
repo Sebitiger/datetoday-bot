@@ -2,10 +2,12 @@ import { openai } from "./openaiCommon.js";
 
 export async function generateReplyTweet(event) {
   const userPrompt = `
-Add extra historical context and background about this event. 
-Write 1–2 short sentences. 
-No emojis.
-No hashtags.
+Write 1–2 short sentences giving extra historical context about this event.
+Rules:
+- No emojis
+- No hashtags
+- Clear, factual, neutral tone
+- Max 280 characters
 
 Event:
 ${event.description}
@@ -15,8 +17,8 @@ ${event.description}
     const completion = await openai.chat.completions.create({
       model: "gpt-4.1-mini",
       messages: [{ role: "user", content: userPrompt }],
-      temperature: 0.7,
-      max_tokens: 180,
+      temperature: 0.5,
+      max_tokens: 170,
     });
 
     return completion.choices[0].message.content.trim();
@@ -25,3 +27,4 @@ ${event.description}
     return "Additional context unavailable.";
   }
 }
+
