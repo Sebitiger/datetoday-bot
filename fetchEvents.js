@@ -31,19 +31,20 @@ export async function getEventForDate(date = new Date()) {
       throw new Error("No events returned from API");
     }
 
-    const wikipediaTitle = event.wikipedia?.[0]?.title;
+    const wikipediaEntry = event.wikipedia?.[0];
+    const wikipediaTitle = wikipediaEntry?.title || null;
+
     return {
       year: event.year,
       description: event.description,
-      wikipediaTitle,
+      wikipediaTitle
     };
   } catch (err) {
     console.error("[Events] Failed to fetch events:", err.message || err);
-    // Fallback: return a generic placeholder event so the bot still posts
     return {
       year: "N/A",
       description: "A significant historical event took place on this day. (Fallback content – external API unavailable.)",
-      wikipediaTitle: null,
+      wikipediaTitle: null
     };
   }
 }
