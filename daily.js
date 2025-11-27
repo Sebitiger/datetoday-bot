@@ -1,147 +1,108 @@
-import { fetchEventImage } from "./fetchImage.js";
-import { postTweet } from "./twitterClient.js";
-import { generateMainTweet } from "./generateTweet.js";
-import { generateReplyTweet } from "./generateReply.js";
+// daily.js — MAIN DAILY SCRIPT
 import fetch from "node-fetch";
+import { postTweet, postReply, postTweetWithImage } from "./twitterClient.js";
+import { generateMainTweet } from "./generateTweet.js";
+import { generateImageFromTitle } from "./fetchImage.js";
 
-/**
- * Fetch today's historical events using Byabbe API
- */
+// Fetch events from ByAbbe API
 async function fetchEvents() {
-  const now = new Date();
-  const month = now.getMonth() + 1;
-  const day = now.getDate();
+  const today = new Date();
+  const month = today.getMonth() + 1;
+  const day = today.getDate();
 
   const url = `https://byabbe.se/on-this-day/${month}/${day}/events.json`;
+  console.log(`[Events] Fetching events from: ${url}`);
 
-  console.log("[Events] Fetching events from:", url);
-
-  const res = await fetch(url);
-  if (!res.ok) throw new Error("Failed to fetch events");
-
-  const data = await res.json();
-  return data.events;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return data.events;
+  } catch (err) {
+    console.error("[Events] Error fetching events:", err.message);
+    return [];
+  }
 }
 
-/**
- * Select a single event (random but weighted toward high-impact topics)
- */
-function pickEvent(events) {
-  // Filter out trivial events
-  const filtered = events.filter(ev => {
-    const text = ev.description.toLowerCase();
-    return !(
-      text.includes("sports") ||
-      text.includes("baseball") ||
-      text.includes("football") ||
-      text.includes("cricket") ||
-      text.includes("tennis") ||
-      text.includes("golf") ||
-      text.includes("olympics") ||
-      text.includes("award") ||
-      text.includes("music") ||
-      text.includes("film")
-    );
-  });
+// Select a random event (medium randomness)
+function chooseRandomEvent(events) {
+  if (!events || events.length === 0) return null;
+  const index = Math.floor(Math.random() * events.length);
+  return events[index];
+}
 
-  const usable = filtered.length > 0 ? filtered : events;
-
-  const chosen = usable[Math.floor(Math.random() * usable.length)];
-
-  // Extract Wikipedia title from event.wikipedia array
-  let wikipediaTitle = null;
-  if (chosen.wikipedia && chosen.wikipedia.length > 0) {
-    wikipediaTitle = chosen.wikipedia[0].title;
-  }
+// Build the "event object" with date metadata
+function formatEvent(rawEvent) {
+  const today = new Date();
+  const monthName = today.toLocaleString("en-US", { month: "long" });
+  const day = today.getDate();
 
   return {
-    year: chosen.year,
-    description: chosen.description,
-    wikipediaTitle
+    year: rawEvent.year,
+    description: rawEvent.description,
+    wikipedia: rawEvent.wikipedia, 
+    monthName,
+    day,
   };
 }
 
-/**
- * Build multiple candidate titles for image search.
- */
-function getImageTitleCandidates(event) {
-  const titles = [];
-
-  // 1) Use API-provided title if present
-  if (event.wikipediaTitle) {
-    titles.push(event.wikipediaTitle);
-  }
-
-  const desc = event.description || "";
-  if (!desc) return titles;
-
-  // 2) Try to extract names (capitalized sequences)
-  const searchZone = desc.includes(":") ? desc.split(":")[1] : desc;
-
-  const nameRegex = /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/g;
-
-  const blacklist = [
-    "War", "Revolution", "Empire", "Republic", "Kingdom",
-    "Civil", "World", "Treaty", "Agreement", "Act",
-    "Conference", "Battle", "Siege"
-  ];
-
-  let match;
-  const found = [];
-
-  while ((match = nameRegex.exec(searchZone)) !== null) {
-    const name = match[1].trim();
-    const block = blacklist.some(b => name.includes(b));
-    if (!block) found.push(name);
-  }
-
-  for (const n of found) {
-    if (!titles.includes(n)) titles.push(n);
-  }
-
-  // 3) Fallback
-  if (titles.length === 0) {
-    titles.push(desc.split("–")[0].trim());
-  }
-
-  console.log("[Daily] Image title candidates:", titles);
-  return titles;
-}
-
-/**
- * MAIN: Run the daily post
- */
 export async function runDaily() {
   console.log("[RunDaily] starting…");
 
+  // 1) Fetch events
+  const events = await fetchEvents();
+  if (events.length === 0) {
+    console.error("[Daily] No events found.");
+    return;
+  }
+
+  // 2) Select event
+  const selected = chooseRandomEvent(events);
+  const event = formatEvent(selected);
+
+  console.log("[Daily] Selected event:", event.year, "–", event.description.substring(0, 80), "...");
+
+  // 3) Generate the main tweet text with OpenAI
+  const mainTweetText = await generateMainTweet(event);
+
+  // 4) Try fetching an image
+  let mediaId = null;
   try {
-    const events = await fetchEvents();
-    const event = pickEvent(events);
+    console.log("[Image] Generating image request from:", event.description);
+    mediaId = await generateImageFromTitle(event.description);
 
-    console.log("[Daily] Selected event:", event.year, "–", event.description);
-
-    // Build the X text
-    const mainTweetText = await generateTweetText(event);
-    const replyTweetText = await generateReplyTweet(event);
-
-    // Build image title candidates
-    const candidates = getImageTitleCandidates(event);
-
-    // Fetch image using the smart multi-title system
-    const imageBuffer = await fetchEventImage(candidates);
-
-    // Post main tweet (with or without image)
-    const mainTweetId = await postTweet(mainTweetText, imageBuffer);
-    console.log("[Twitter] Tweet posted with id:", mainTweetId);
-
-    // Post reply
-    const replyId = await postTweet(replyTweetText, null, mainTweetId);
-    console.log("[Twitter] Reply posted with id:", replyId);
-
-    console.log("[Daily] Main tweet + reply posted successfully.");
-
+    if (!mediaId) {
+      console.log("[Image] No image generated. Posting text-only tweet.");
+    }
   } catch (err) {
-    console.error("[Daily] Job failed:", err.message);
+    console.error("[Image] Error:", err);
+  }
+
+  // 5) Post the main tweet (with image if possible)
+  let mainTweetId = null;
+  try {
+    if (mediaId) {
+      mainTweetId = await postTweetWithImage(mainTweetText, mediaId);
+    } else {
+      mainTweetId = await postTweet(mainTweetText);
+    }
+    console.log("[Twitter] Main tweet posted with id:", mainTweetId);
+  } catch (err) {
+    console.error("[Twitter] Error posting main tweet:", err);
+    return;
+  }
+
+  // 6) Generate reply explanatory tweet
+  const replyText =
+    `${event.description}\n\n` +
+    `This event took place in ${event.year}.`;
+
+  // 7) Post reply
+  try {
+    const replyId = await postReply(replyText, mainTweetId);
+    console.log("[Twitter] Reply posted with id:", replyId);
+  } catch (err) {
+    console.error("[Twitter] Reply error:", err);
   }
 
   console.log("[RunDaily] done.");
