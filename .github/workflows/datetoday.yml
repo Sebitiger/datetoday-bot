@@ -2,10 +2,10 @@ name: DateToday Bot
 
 on:
   schedule:
-    - cron: "0 9 * * *"     # 09:00 UTC - daily main tweet
-    - cron: "0 18 * * *"    # 18:00 UTC - evening fact
-    - cron: "0 16 * * 0"    # Sunday 16:00 UTC - weekly thread
-  workflow_dispatch:         # allows manual trigger
+    - cron: "0 9 * * *"     # Daily main tweet – 09:00 UTC
+    - cron: "0 18 * * *"    # Evening extra fact – 18:00 UTC
+    - cron: "0 16 * * 0"    # Weekly thread – Sunday 16:00 UTC
+  workflow_dispatch:         # Allows manual test run
 
 jobs:
   run-bot:
@@ -30,13 +30,25 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Run correct script based on cron schedule
-         run: node runDaily.js
-          if [ "${{ github.event.schedule }}" = "0 9 * * *" ]; then
+      # -----------------------------
+      # MANUAL RUN = DAILY POST
+      # SCHEDULED RUN = DECIDE SCRIPT
+      # -----------------------------
+      - name: Run correct script
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manual run → running DAILY script"
+            node runDaily.js
+          elif [ "${{ github.event.schedule }}" = "0 9 * * *" ]; then
+            echo "Cron 09:00 UTC → DAILY"
             node runDaily.js
           elif [ "${{ github.event.schedule }}" = "0 18 * * *" ]; then
+            echo "Cron 18:00 UTC → EVENING"
             node runEvening.js
-          else
+          elif [ "${{ github.event.schedule }}" = "0 16 * * 0" ]; then
+            echo "Cron Sunday 16:00 → WEEKLY THREAD"
             node runWeekly.js
+          else
+            echo "Unknown trigger – defaulting to DAILY"
+            node runDaily.js
           fi
-
