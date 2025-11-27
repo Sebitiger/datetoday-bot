@@ -1,62 +1,53 @@
-import axios from "axios";
+import fetch from "node-fetch";
 import sharp from "sharp";
 
-const WIKI_SUMMARY_BASE = "https://en.wikipedia.org/api/rest_v1/page/summary/";
-
+/**
+ * Fetches a safe Wikimedia thumbnail (always JPG/PNG, always accessible).
+ * Avoids Cloudflare 403 errors from upload.wikimedia.org.
+ *
+ * Returns: Buffer or null
+ */
 export async function fetchEventImage(title) {
-  if (!title) {
-    console.log("[Image] No Wikipedia title, skipping image.");
-    return null;
-  }
-
   try {
-    const encodedTitle = encodeURIComponent(title);
-    const url = `${WIKI_SUMMARY_BASE}${encodedTitle}`;
-    console.log("[Image] Fetching Wikipedia summary for:", title);
+    if (!title) return null;
 
-    const { data } = await axios.get(url, { timeout: 10000 });
+    // Encode title for URL
+    const safeTitle = encodeURIComponent(title.replace(/\s+/g, "_"));
 
-    const imageUrl =
-      data.originalimage?.source ||
-      data.thumbnail?.source ||
-      null;
+    // Wikimedia REST API (safe, stable, no 403)
+    const apiUrl = `https://api.wikimedia.org/core/v1/wikipedia/en/page/${safeTitle}/thumbnail/800`;
 
-    if (!imageUrl) {
-      console.log("[Image] No image available on Wikipedia for this event.");
-      return null;
-    }
+    console.log("[Image] Fetching REST thumbnail:", apiUrl);
 
-    console.log("[Image] Downloading image from:", imageUrl);
-    const imgRes = await axios.get(imageUrl, {
-      responseType: "arraybuffer",
-      timeout: 15000
+    const res = await fetch(apiUrl, {
+      headers: {
+        "User-Agent": "DateTodayBot/1.0 (https://twitter.com/)",
+        "Accept": "application/json"
+      }
     });
 
-    const inputBuffer = Buffer.from(imgRes.data);
-
-    // Use sharp to crop to center square and resize to 1024x1024
-    const image = sharp(inputBuffer);
-    const metadata = await image.metadata();
-
-    const size = Math.min(metadata.width || 0, metadata.height || 0);
-    if (!size || size <= 0) {
-      console.log("[Image] Invalid image dimensions, skipping.");
+    if (!res.ok) {
+      console.log("[Image] Thumbnail fetch failed:", res.status);
       return null;
     }
 
-    const left = Math.floor(((metadata.width || size) - size) / 2);
-    const top = Math.floor(((metadata.height || size) - size) / 2);
+    const data = await res.json();
 
-    const squareBuffer = await image
-      .extract({ left, top, width: size, height: size })
-      .resize(1024, 1024)
-      .jpeg({ quality: 85 })
-      .toBuffer();
+    if (!data || !data.thumbnail || !data.thumbnail.url) {
+      console.log("[Image] No thumbnail available.");
+      return null;
+    }
 
-    console.log("[Image] Square image prepared.");
-    return squareBuffer;
-  } catch (err) {
-    console.error("[Image] Error fetching or processing image:", err.message || err);
-    return null;
-  }
-}
+    // Now fetch the thumbnail image as buffer
+    const imgRes = await fetch(data.thumbnail.url);
+    if (!imgRes.ok) {
+      console.log("[Image] Failed to fetch thumbnail file:", imgRes.status);
+      return null;
+    }
+
+    const imgBuffer = await imgRes.arrayBuffer();
+    const buffer = Buffer.from(imgBuffer);
+
+    // Crop center square for X
+    const cropped = await sharp(buffer)
+
