@@ -9,24 +9,15 @@ const client = new TwitterApi({
   accessSecret: process.env.ACCESS_SECRET,
 });
 
-export async function postTweet(status) {
+export async function postTweet(text, replyToId = null) {
   try {
-    const res = await client.v2.tweet(status);
-    console.log("[Twitter] Tweet posted with id:", res.data?.id);
+    const res = await client.v2.tweet({
+      text,
+      reply: replyToId ? { in_reply_to_tweet_id: replyToId } : undefined,
+    });
     return res;
   } catch (err) {
-    console.error("[Twitter] Error posting tweet:", err?.data || err);
-    throw err;
-  }
-}
-
-export async function postThread(tweets) {
-  try {
-    const res = await client.v2.tweetThread(tweets);
-    console.log("[Twitter] Thread posted. Length:", tweets.length);
-    return res;
-  } catch (err) {
-    console.error("[Twitter] Error posting thread:", err?.data || err);
+    console.error("[Twitter post error]", err);
     throw err;
   }
 }
